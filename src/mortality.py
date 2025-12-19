@@ -264,6 +264,9 @@ def make_lifetable(
     if use_ma and len(df) > 1:
         log_mx = np.log(np.maximum(df["mx"], eps))
         log_mx_smooth = log_mx.rolling(window=int(ma_window), center=True, min_periods=1).mean()
+        # Keep infant/early ages unsmoothed (MA can distort 0–1/1–4)
+        early_mask = df["age"] < 2.0
+        log_mx_smooth.loc[early_mask] = log_mx.loc[early_mask]
         df["mx"] = np.exp(log_mx_smooth)
         df["ma_window"] = int(ma_window)  # metadata column
 
