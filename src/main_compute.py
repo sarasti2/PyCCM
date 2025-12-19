@@ -22,10 +22,10 @@ import os
 import sys
 import zlib
 import shutil
+import multiprocessing as mp
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from multiprocessing import Pool  # kept to preserve original imports; not used in sweep
 
 from mortality import make_lifetable
 from fertility import compute_asfr, get_target_params
@@ -51,15 +51,19 @@ from abridger import (
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 CONFIG_PATH = os.path.join(ROOT_DIR, "config.yaml")
 CFG, PATHS = _load_config(ROOT_DIR, CONFIG_PATH)
+# Main process PID for logging guard
+_MAIN_PID = os.getpid()
 
 # Maintenance: clean run (delete results_dir)
 if bool(CFG.get("maintenance", {}).get("clean_run", False)):
     try:
         if os.path.isdir(PATHS["results_dir"]):
             shutil.rmtree(PATHS["results_dir"])
-            print(f"[maintenance] Removed results_dir: {PATHS['results_dir']}")
+            if os.getpid() == _MAIN_PID:
+                print(f"[maintenance] Removed results_dir: {PATHS['results_dir']}")
     except Exception as e:
-        print(f"[maintenance] Warning: failed to remove results_dir ({e}).")
+        if os.getpid() == _MAIN_PID:
+            print(f"[maintenance] Warning: failed to remove results_dir ({e}).")
 os.makedirs(PATHS["results_dir"], exist_ok=True)
 
 # Diagnostics
@@ -113,7 +117,8 @@ if UNABR:
     EDAD_ORDER = EXPECTED_BINS[:]
     STEP_YEARS = 1
     PERIOD_YEARS = 1
-    print("[pipeline] UNABRIDGED mode: single-year ages & annual projections.")
+    if os.getpid() == _MAIN_PID:
+        print("[pipeline] UNABRIDGED mode: single-year ages & annual projections.")
 else:
     AGEB = CFG["age_bins"]
     _exp_bins = _coerce_list(AGEB.get("expected_bins", return_default_config()["age_bins"]["expected_bins"]))
@@ -122,7 +127,8 @@ else:
     EDAD_ORDER = _order if _order is not None else return_default_config()["age_bins"]["order"]
     STEP_YEARS = int(PROJ.get("step_years", 5)) or 5
     PERIOD_YEARS = STEP_YEARS
-    print(f"[pipeline] ABRIDGED mode: 5-year ages & projections every {STEP_YEARS} years.")
+    if os.getpid() == _MAIN_PID:
+        print(f"[pipeline] ABRIDGED mode: 5-year ages & projections every {STEP_YEARS} years.")
 
 # ---------------- Mortality improvements: CSV reader & parameter merge ----------------
 def _coerce_percent_any(x):
@@ -282,15 +288,18 @@ def _mortality_factor_for_year(year: int, dpto_name: str) -> float:
     effective = G * S_t
     return float(np.exp(-effective))
 
+
 # ---------------------- Supplementary inputs (loaded once) ---------------------
 def _load_supplementaries(paths: dict, *, default_midpoint: float) -> dict:
     out = {"targets": None, "target_conv_years": None, "midpoint_weights": {}}
 
     mort_path = paths.get("mortality_improvements_csv")
     if mort_path and os.path.exists(mort_path) and os.path.getsize(mort_path) > 0 and len(MORT_PARAMS_BY_DPTO) > 0:
-        print(f"[mortality] mortality_improvements.csv present at {mort_path}: {len(MORT_PARAMS_BY_DPTO)} DPTO rows loaded.")
+        if os.getpid() == _MAIN_PID:
+            print(f"[mortality] mortality_improvements.csv present at {mort_path}: {len(MORT_PARAMS_BY_DPTO)} DPTO rows loaded.")
     else:
-        print(f"[mortality] No mortality_improvements CSV found (expected at {mort_path}). Using YAML defaults only.")
+        if os.getpid() == _MAIN_PID:
+            print(f"[mortality] No mortality_improvements CSV found (expected at {mort_path}). Using YAML defaults only.")
 
     tfr_path = paths.get("target_tfr_csv")
     if tfr_path and os.path.exists(tfr_path) and os.path.getsize(tfr_path) > 0:
@@ -298,22 +307,27 @@ def _load_supplementaries(paths: dict, *, default_midpoint: float) -> dict:
         out["targets"] = targets
         out["target_conv_years"] = conv_years if conv_years else {}
         n_conv = len(conv_years) if conv_years else 0
-        print(f"[fertility] target_tfr_csv present at {tfr_path}: {len(targets)} targets; custom convergence years for {n_conv} DPTO(s).")
+        if os.getpid() == _MAIN_PID:
+            print(f"[fertility] target_tfr_csv present at {tfr_path}: {len(targets)} targets; custom convergence years for {n_conv} DPTO(s).")
     else:
-        print("[fertility] No target_tfr_csv found (expected at {0}). Defaulting to global target & YAML convergence years."
-              .format(tfr_path))
+        if os.getpid() == _MAIN_PID:
+            print("[fertility] No target_tfr_csv found (expected at {0}). Defaulting to global target & YAML convergence years."
+                  .format(tfr_path))
 
     mid_path = paths.get("midpoints_csv")
     if mid_path and os.path.exists(mid_path) and os.path.getsize(mid_path) > 0:
         try:
             out["midpoint_weights"] = get_midpoint_weights(mid_path)
-            print(f"[midpoint] midpoints_csv present at {mid_path}: {len(out['midpoint_weights'])} DPTO weights loaded; "
-                  f"default {default_midpoint} used for others.")
+            if os.getpid() == _MAIN_PID:
+                print(f"[midpoint] midpoints_csv present at {mid_path}: {len(out['midpoint_weights'])} DPTO weights loaded; "
+                      f"default {default_midpoint} used for others.")
         except Exception as e:
-            print(f"[midpoint] Warning: failed to read midpoints_csv ({e}); default {default_midpoint} will be used for all DPTOs.")
+            if os.getpid() == _MAIN_PID:
+                print(f"[midpoint] Warning: failed to read midpoints_csv ({e}); default {default_midpoint} will be used for all DPTOs.")
             out["midpoint_weights"] = {}
     else:
-        print(f"[midpoint] No midpoints_csv found (expected at {mid_path}); using default EEVV weight = {default_midpoint} for all DPTOs.")
+        if os.getpid() == _MAIN_PID:
+            print(f"[midpoint] No midpoints_csv found (expected at {mid_path}); using default EEVV weight = {default_midpoint} for all DPTOs.")
     return out
 
 SUPP = _load_supplementaries(PATHS, default_midpoint=DEFAULT_MIDPOINT)
@@ -326,6 +340,8 @@ leslie_records: List[pd.DataFrame] = []
 
 # Global progress bar handle (single bar)
 _GLOBAL_PBAR = None
+# Async progress queue for cross-process updates
+_PROGRESS_QUEUE = None
 
 # --------------------------------- main logic ---------------------------------
 def main_wrapper(conteos, emi, imi, projection_range, sample_type, distribution=None, draw=None, supp: dict | None = None):
@@ -875,7 +891,21 @@ if __name__ == "__main__":
     _proj_mod.save_projections = lambda *args, **kwargs: None
 
     def _execute_task(args):
-        sample_type, dist, label = args
+        sample_type, dist, label, tfr_target, mort_impr, ma_win = args
+        global DEFAULT_TFR_TARGET, MORT_IMPROV_TOTAL_DEFAULT, MORT_MA_WINDOW_DEFAULT, _GLOBAL_PBAR
+        global lifetable_records, asfr_records, projection_records, leslie_records
+        # Set scenario-level defaults for this job
+        DEFAULT_TFR_TARGET = float(tfr_target)
+        MORT_IMPROV_TOTAL_DEFAULT = float(mort_impr)
+        MORT_MA_WINDOW_DEFAULT = int(ma_win)
+        # Disable global progress bar inside workers (parent tracks progress)
+        _GLOBAL_PBAR = None
+
+        # Local aggregators per process
+        lifetable_records = []
+        asfr_records = []
+        projection_records = []
+        leslie_records = []
         seed = zlib.adler32(label.encode("utf8")) & 0xFFFFFFFF
         np.random.seed(seed)
 
@@ -920,7 +950,26 @@ if __name__ == "__main__":
             main_wrapper(conteos_in, emi_in, imi_in, projection_range, label, supp=SUPP)
         else:
             main_wrapper(conteos_in, emi_in, imi_in, projection_range, "draw", dist, label, supp=SUPP)
-        return label
+
+        out = {
+            "lifetables": pd.concat(lifetable_records, ignore_index=True) if lifetable_records else None,
+            "asfr": pd.concat(asfr_records, ignore_index=True) if asfr_records else None,
+            "projections": pd.concat(projection_records, ignore_index=True) if projection_records else None,
+            "leslie": pd.concat(leslie_records, ignore_index=True) if leslie_records else None,
+        }
+        return out
+
+    def _collect_results(res: dict) -> None:
+        if not res:
+            return
+        if res.get("lifetables") is not None:
+            lifetable_records.append(res["lifetables"])
+        if res.get("asfr") is not None:
+            asfr_records.append(res["asfr"])
+        if res.get("projections") is not None:
+            projection_records.append(res["projections"])
+        if res.get("leslie") is not None:
+            leslie_records.append(res["leslie"])
 
     def _inclusive_arange(start: float, stop: float, step: float) -> List[float]:
         if step == 0:
@@ -964,40 +1013,36 @@ if __name__ == "__main__":
     Ntasks = len(tasks)
     Ndchoices = len(DEATH_CHOICES)
     Nyears = len(range(START_YEAR, END_YEAR + 1, STEP_YEARS))
-    total_steps = len(param_combos) * Ntasks * Ndchoices * Nyears
+    Ndptos = len(conteos["DPTO_NOMBRE"].unique()) + 1  # include total_nacional
+    # Build job list: one job per (task, parameter combo)
+    jobs = []
+    for (tfr_target, mort_impr, ma_win) in param_combos:
+        for task in tasks:
+            jobs.append((task[0], task[1], task[2], float(tfr_target), float(mort_impr), int(ma_win)))
 
-    # threads share memory with the main process; safe with our global aggregators
-    try:
-        from multiprocessing.dummy import Pool as ThreadPool  # thread-based Pool
-    except ImportError:
-        ThreadPool = None
+    # Progress counts inner iterations (death choices × years × DPTO) per job.
+    steps_per_job = Ndchoices * Nyears * Ndptos
+    total_steps = len(jobs) * steps_per_job
 
     PROCS = max(1, int(CFG.get("parallel", {}).get("processes", 1)))
-    _GLOBAL_PBAR = tqdm(total=total_steps, desc="Projection sweep (joint)", unit="step")
+    _GLOBAL_PBAR = tqdm(total=total_steps, desc="Projection jobs", unit="step", dynamic_ncols=True)
+
+    # Chunk size to reduce scheduler overhead
+    chunksize = max(1, len(jobs) // max(PROCS * 4, 1))
 
     try:
-        for (tfr_target, mort_impr, ma_win) in param_combos:
-            # set scenario params for this grid point (serial to avoid races)
-            DEFAULT_TFR_TARGET = float(tfr_target)
-            MORT_IMPROV_TOTAL_DEFAULT = float(mort_impr)
-            MORT_MA_WINDOW_DEFAULT = int(ma_win)
-
-            if _GLOBAL_PBAR is not None:
-                _GLOBAL_PBAR.set_postfix({
-                    "TFR*": f"{DEFAULT_TFR_TARGET:.2f}",
-                    "IMPR*": f"{MORT_IMPROV_TOTAL_DEFAULT:.3f}",
-                    "MA": MORT_MA_WINDOW_DEFAULT,
-                })
-
-            # run the task list in parallel threads (shared memory → aggregators still fill)
-            if PROCS > 1 and ThreadPool is not None and len(tasks) > 1:
-                with ThreadPool(PROCS) as pool:
-                    for _ in pool.imap_unordered(_execute_task, tasks):
-                        pass
-            else:
-                for task in tasks:
-                    _execute_task(task)
-
+        if PROCS > 1 and len(jobs) > 1:
+            with mp.Pool(processes=PROCS) as pool:
+                for res in pool.imap_unordered(_execute_task, jobs, chunksize=chunksize):
+                    _collect_results(res)
+                    if _GLOBAL_PBAR is not None:
+                        _GLOBAL_PBAR.update(steps_per_job)
+        else:
+            for job in jobs:
+                res = _execute_task(job)
+                _collect_results(res)
+                if _GLOBAL_PBAR is not None:
+                    _GLOBAL_PBAR.update(steps_per_job)
     finally:
         if _GLOBAL_PBAR is not None:
             _GLOBAL_PBAR.close()
