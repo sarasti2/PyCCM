@@ -1,57 +1,92 @@
+# Configuration for PyCCM projections.
+# Paths are workspace-relative unless otherwise stated.
+
 paths:
+  # Base directories for inputs and outputs.
   data_dir: "./data"
   results_dir: "./julianas_results"
+  # Optional per-DPTO target TFR overrides; falls back to fertility.default_tfr_target.
   target_tfr_csv: "./data/target_tfrs.csv"
+  # Optional per-DPTO midpoint weights for EEVV vs censo; falls back to midpoints.default_eevv_weight.
   midpoints_csv: "./data/midpoints.csv"
+  # Optional per-DPTO mortality improvements; falls back to mortality defaults below.
   mortality_improvements_csv: "./data/mortality_improvements_in_class.csv"
 
 diagnostics:
+  # Print parsed target TFR CSV at startup.
   print_target_csv: true
+  # Verbose logging of mortality improvement parameters when loaded.
   mortality_improvements_debug: true
 
 # was: housekeeping:
 maintenance:
+  # If true, remove old scenario folders before running.
   clean_run: true
 
 unabridging:
+  # If true, expand 5-year ages to single-year with smoothing.
   enabled: true
 
 projections:
+  # Projection horizon (inclusive start; produces end_year + 1).
   start_year: 2018
   end_year: 2069  # note this will produce projections to end_year + 1
+  # Time step in years (1 for unabridged mode).
   step_years: 1
+  # Death sources to use; see last_observed_year_by_death for availability.
   death_choices: ["EEVV"]
   last_observed_year_by_death:
     EEVV: 2023
     censo_2018: 2018
     midpoint: 2018
+  # Period length used for rates (keep aligned with step_years in abridged runs).
   period_years: 1
+  # Latest year of available flows for migration inputs.
   flows_latest_year: 2024
 
 fertility:
+  # Default TFR target when no per-DPTO target is supplied.
   default_tfr_target: 1.45
+  # Years to converge from baseline to target TFR.
   convergence_years: 52
+  # TFR trajectory smoother.
   smoother:
+    # "exp" uses converge_frac; "logistic" uses mid_frac and steepness.
     kind: "exp"
     converge_frac: 0.99
     logistic:
       mid_frac: 0.5
       steepness: null
-  # Joint sweep over the target TFR (inclusive bounds)
+  # Joint sweep over the target TFR (inclusive bounds).
   default_tfr_target_range:
     start: 1.45
     stop: 1.45
     step: 0.05
 
 midpoints:
+  # Default weight on EEVV when blending midpoint deaths; CSV overrides per DPTO.
   default_eevv_weight: 0.5
 
+# Mortality inputs quick ref:
+# - `paths.mortality_improvements_csv` can override per DPTO; missing values
+#   fall back to the defaults below.
+# - `smoother.kind`: `exp` uses converge_frac; `logistic` uses mid_frac and
+#   steepness (auto-calibrated if null).
+# - For unabridged 0–4 exposures, choose a baseline 0–4 weight shape (life table
+#   or model table) and, if desired, tilt using the 0–1 vs 1–4 death ratio.
+
 mortality:
+  # Apply moving-average smoothing to life-table inputs.
   use_ma: true
+  # Window length (years) for the moving average.
   ma_window: 5
+  # Long-run death-rate reduction fraction; CSV can override per DPTO.
   improvement_total: 0.2  # default if DPTO missing in CSV
+  # Years to reach (almost) full improvement.
   convergence_years: 52
+  # Smoother for mortality improvement path.
   smoother:
+    # "exp" uses converge_frac; "logistic" uses mid_frac/steepness (auto if null).
     kind: "exp"
     converge_frac: 0.99
     logistic:
@@ -83,11 +118,14 @@ age_bins:
     ]
 
 runs:
+  # Mode: "no_draws" for deterministic scenarios; "draws" for stochastic.
   mode: "no_draws"
+  # Deterministic scenario definitions.
   no_draws_tasks:
     - { sample_type: "mid",  distribution: null, label: "mid_omissions" }
     - { sample_type: "low",  distribution: null, label: "low_omissions" }
     - { sample_type: "high", distribution: null, label: "high_omissions" }
+  # Stochastic draw settings (used if mode == "draws").
   draws:
     num_draws: 1000
     dist_types: ["uniform"]
@@ -97,6 +135,7 @@ parallel:
   processes: 20    # increase to use more CPU cores
 
 filenames:
+  # Input file names (relative to paths.data_dir unless otherwise specified).
   asfr: "asfr.csv"
   lt_M: "lt_M_t.csv"
   lt_F: "lt_F_t.csv"
