@@ -1,5 +1,6 @@
 # src/data_loaders.py
 import os
+import warnings
 import yaml
 import pyreadr
 import pandas as pd
@@ -82,6 +83,59 @@ def _deep_merge(dst, src):
         else:
             dst[k] = v
 
+
+def _validate_config(cfg: dict) -> None:
+    """
+    Sanity-check key config values; warn on implausible, error on impossible.
+    """
+    # Fertility
+    fert = cfg.get("fertility", {})
+    tfr = fert.get("default_tfr_target", None)
+    if tfr is not None:
+        if tfr <= 0:
+            raise ValueError("fertility.default_tfr_target must be > 0.")
+        if tfr < 0.5 or tfr > 5.0:
+            warnings.warn(f"fertility.default_tfr_target={tfr} looks implausible; check input.")
+    conv_years_f = fert.get("convergence_years", None)
+    if conv_years_f is not None and conv_years_f <= 0:
+        raise ValueError("fertility.convergence_years must be > 0.")
+    cfrac = (fert.get("smoother", {}) or {}).get("converge_frac", None)
+    if cfrac is not None and not (0 < cfrac < 1):
+        raise ValueError("fertility.smoother.converge_frac must be in (0,1).")
+    mid_frac = ((fert.get("smoother", {}) or {}).get("logistic", {}) or {}).get("mid_frac", None)
+    if mid_frac is not None and not (0 < mid_frac < 1):
+        warnings.warn(f"fertility.smoother.logistic.mid_frac={mid_frac} should be in (0,1); check input.")
+
+    # Mortality
+    mort = cfg.get("mortality", {})
+    imp = mort.get("improvement_total", None)
+    if imp is not None:
+        if not (0 <= imp < 1):
+            raise ValueError("mortality.improvement_total must be in [0,1).")
+        if imp > 0.6:
+            warnings.warn(f"mortality.improvement_total={imp} is unusually high; verify intent.")
+    conv_years_m = mort.get("convergence_years", None)
+    if conv_years_m is not None and conv_years_m <= 0:
+        raise ValueError("mortality.convergence_years must be > 0.")
+    ma_win = mort.get("ma_window", None)
+    if ma_win is not None and ma_win < 1:
+        raise ValueError("mortality.ma_window must be >= 1.")
+    cfrac_m = (mort.get("smoother", {}) or {}).get("converge_frac", None)
+    if cfrac_m is not None and not (0 < cfrac_m < 1):
+        raise ValueError("mortality.smoother.converge_frac must be in (0,1).")
+    mid_frac_m = ((mort.get("smoother", {}) or {}).get("logistic", {}) or {}).get("mid_frac", None)
+    if mid_frac_m is not None and not (0 < mid_frac_m < 1):
+        warnings.warn(f"mortality.smoother.logistic.mid_frac={mid_frac_m} should be in (0,1); check input.")
+
+    # Midpoints
+    mid = cfg.get("midpoints", {})
+    w = mid.get("default_eevv_weight", None)
+    if w is not None:
+        if not (0 <= w <= 1):
+            raise ValueError("midpoints.default_eevv_weight must be between 0 and 1.")
+        if w < 0.1 or w > 0.9:
+            warnings.warn(f"midpoints.default_eevv_weight={w} is extreme; confirm the blend.")
+
 def _load_config(ROOT_DIR: str, path: str):
     """
     Load YAML config if present; otherwise use defaults for both config and paths.
@@ -94,6 +148,8 @@ def _load_config(ROOT_DIR: str, path: str):
         _deep_merge(cfg, user)
     else:
         print(f"[config] No config file at {path}; using built-in defaults.")
+
+    _validate_config(cfg)
 
     PATHS = {
         "data_dir": _resolve(ROOT_DIR, cfg["paths"]["data_dir"]),
