@@ -649,14 +649,15 @@ def main_wrapper(conteos, emi, imi, projection_range, sample_type, distribution=
                         ma_window=MA_WIN,
                     )
                     if lt_M_t is not None and lt_F_t is not None and lt_T_t is not None:
-                        if int(year) == int(START_YEAR):
-                            lt_M_df = lt_M_t.reset_index(); lt_M_df["Sex"] = "M"
-                            lt_F_df = lt_F_t.reset_index(); lt_F_df["Sex"] = "F"
-                            lt_T_df = lt_T_t.reset_index(); lt_T_df["Sex"] = "T"
-                            lt_df_all = pd.concat([lt_M_df, lt_F_df, lt_T_df], ignore_index=True)
-                            lt_df_all["DPTO_NOMBRE"] = DPTO
-                            lt_df_all["death_choice"] = death_choice
-                            scenario_lifetable_frames.append(lt_df_all)
+                        # Store lifetables for every year we rebuild them (not just start year)
+                        lt_M_df = lt_M_t.reset_index(); lt_M_df["Sex"] = "M"
+                        lt_F_df = lt_F_t.reset_index(); lt_F_df["Sex"] = "F"
+                        lt_T_df = lt_T_t.reset_index(); lt_T_df["Sex"] = "T"
+                        lt_df_all = pd.concat([lt_M_df, lt_F_df, lt_T_df], ignore_index=True)
+                        lt_df_all["DPTO_NOMBRE"] = DPTO
+                        lt_df_all["death_choice"] = death_choice
+                        lt_df_all["year"] = year
+                        scenario_lifetable_frames.append(lt_df_all)
 
                 cutoff = LAST_OBS_YEAR.get(death_choice, START_YEAR)
                 key = (DPTO, death_choice)
@@ -795,7 +796,6 @@ def main_wrapper(conteos, emi, imi, projection_range, sample_type, distribution=
         scen_lt_df["default_tfr_target"] = float(DEFAULT_TFR_TARGET)
         scen_lt_df["improvement_total"] = float(MORT_IMPROV_TOTAL_DEFAULT)
         scen_lt_df["ma_window"] = int(MORT_MA_WINDOW_DEFAULT)
-        scen_lt_df["year"] = START_YEAR
         lifetable_records.append(scen_lt_df)
 
     if scenario_asfr_frames:
