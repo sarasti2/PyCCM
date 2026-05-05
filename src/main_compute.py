@@ -892,14 +892,13 @@ if __name__ == "__main__":
 
     def _execute_task(args):
         sample_type, dist, label, tfr_target, mort_impr, ma_win = args
-        global DEFAULT_TFR_TARGET, MORT_IMPROV_TOTAL_DEFAULT, MORT_MA_WINDOW_DEFAULT, _GLOBAL_PBAR
+        global DEFAULT_TFR_TARGET, MORT_IMPROV_TOTAL_DEFAULT, MORT_MA_WINDOW_DEFAULT
         global lifetable_records, asfr_records, projection_records, leslie_records
         # Set scenario-level defaults for this job
         DEFAULT_TFR_TARGET = float(tfr_target)
         MORT_IMPROV_TOTAL_DEFAULT = float(mort_impr)
         MORT_MA_WINDOW_DEFAULT = int(ma_win)
-        # Disable global progress bar inside workers (parent tracks progress)
-        _GLOBAL_PBAR = None
+  
 
         # Local aggregators per process
         lifetable_records = []
